@@ -1,7 +1,9 @@
 const Restaurant = require('../models/restaurant');
 const FoodItem = require('../models/foodItem');
-const { findRestaurantsWithinRadius } = require('./restaurantController');
+const CachedData = require('../models/cachedData');
 const { getUserLikedVideos2 } = require('./userLikeController');
+const matrixClient = require('@mapbox/mapbox-sdk/services/matrix');
+const mbxMatrix = matrixClient({ accessToken: 'pk.eyJ1Ijoic291bXlhZGlwc2Fya2FyIiwiYSI6ImNseWN6OHNzazAwcHkybXF5NWd2b3N0MTUifQ.Utd-JffEznqet-j2GKNX7g' });
 const { getOffersForRestaurant,getOffersForFoodItem } = require('./offerController');
 const { getVideosForRestaurant,getVideosForFoodItem } = require('./videoController');
 
@@ -21,6 +23,100 @@ const calculateRelevanceScore = (item, distance, type) => {
   }
 
   return score;
+}
+
+const parseCoordinate = (value, digits) => {
+    const factor = Math.pow(10, digits);
+    return Math.round(value * factor) / factor;
+};
+
+const generateCacheKey = (latitude, longitude,minRadius,maxRadius) => {
+    return `restaurants:${latitude}:${longitude}:${minRadius}:${maxRadius}`;
+};
+
+const findRestaurantsWithinRadius=async (latitude, longitude, minRadius, maxRadius)=>{
+    const parsedLatitude = parseCoordinate(latitude, 3);
+    const parsedLongitude = parseCoordinate(longitude, 3);
+    const minRadiusInMeters = minRadius * 1000;
+    const maxRadiusInMeters = maxRadius * 1000;
+  
+    const cacheKey = generateCacheKey(parsedLatitude, parsedLongitude, minRadius, maxRadius);
+    console.log("cacheKey", cacheKey);
+  
+    let cachedData = await CachedData.findOne({ key: cacheKey });
+    if(cachedData){cachedData=cachedData.value;}
+    if (cachedData) {
+      console.log("cacheKey1324243242423", cacheKey);
+      return JSON.parse(cachedData);
+    }
+  
+    // Step 1: Fetch restaurants within the max radius using MongoDB's geospatial query
+    const maxRadiusRestaurants = await Restaurant.find({
+      'location.coordinates': {
+        $geoWithin: {
+          $centerSphere: [[parsedLongitude, parsedLatitude], maxRadiusInMeters / 6378100] // Radius in radians
+        }
+      }
+    }, { _id: 1, location: 1 });
+  
+    let allNearbyRestaurants = maxRadiusRestaurants;
+  
+    if (minRadius > 0) {
+      // Step 2: Fetch restaurants within the min radius using MongoDB's geospatial query
+      const minRadiusRestaurants = await Restaurant.find({
+        'location.coordinates': {
+          $geoWithin: {
+            $centerSphere: [[parsedLongitude, parsedLatitude], minRadiusInMeters / 6378100] // Radius in radians
+          }
+        }
+      }, { _id: 1, location: 1 });
+  
+      // Convert the minRadiusRestaurants to a Set of IDs for quick lookup
+      const minRadiusRestaurantIds = new Set(minRadiusRestaurants.map(restaurant => restaurant._id.toString()));
+  
+      // Filter out restaurants within the minRadius from the maxRadiusRestaurants
+      allNearbyRestaurants = maxRadiusRestaurants.filter(restaurant => 
+        !minRadiusRestaurantIds.has(restaurant._id.toString())
+      );
+    }
+  
+    try {
+      // Prepare coordinates for Mapbox Matrix API
+      const coordinates = allNearbyRestaurants.map(restaurant => ({
+        coordinates: restaurant.location.coordinates
+      }));
+      coordinates.unshift({ coordinates: [parsedLongitude, parsedLatitude] }); // Add the user location as the first coordinate
+  
+      // Step 3: Use Mapbox Matrix API to calculate distances and durations
+      const matrixResponse = await mbxMatrix.getMatrix({
+        points: coordinates,
+        profile: 'driving',
+        annotations: ['distance', 'duration']
+      }).send();
+  
+      const distances = matrixResponse.body.distances[0]; // Distances from the user to each restaurant
+      const durations = matrixResponse.body.durations[0]; // Durations from the user to each restaurant
+  
+      // Step 4: Filter and map distances to restaurants, keeping those within the specified range
+      const restaurantsWithDistancesAndTimes = allNearbyRestaurants
+        .map((restaurant, index) => ({
+          restaurantId: restaurant._id,
+          distanceInKm: distances[index + 1] / 1000, // Convert meters to kilometers
+          timeInMinutes: durations[index + 1] / 60 // Convert seconds to minutes
+        }))
+        .filter(restaurant => {
+          const distance = restaurant.distanceInKm;
+          return distance >= minRadius && distance <= maxRadius;
+        })
+        .sort((a, b) => a.distanceInKm - b.distanceInKm); // Sort by distance ascending
+  
+      // Step 5: Cache the results
+      await CachedData.create({ key: cacheKey, value: JSON.stringify(restaurantsWithDistancesAndTimes) });
+      return restaurantsWithDistancesAndTimes;
+    } catch (error) {
+      console.error('Error fetching nearby restaurants:', error);
+      throw error;
+    }
 }
 
 const getFeed = async (req, res) => {
@@ -223,7 +319,7 @@ const getFeed = async (req, res) => {
         // Filter and sort the final response based on the mode
         let finalResponses=[...deliveryResponses,...diningResponses];
         if (mode === 'dining') {
-            finalResponses = [...deliveryResponses,...diningResponses];
+            finalResponses = [...diningResponses,...deliveryResponses];
         }
 
         res.status(200).send(finalResponses);

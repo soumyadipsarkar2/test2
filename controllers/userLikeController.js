@@ -108,6 +108,17 @@ const deleteUserLike = async (req, res) => {
   }
 };
 
+// Function to get liked videos by user
+const getUserLikedVideos2 = async (userId) => {
+  try {
+    const likes = await UserLike.find({ userId, type: 'video' });
+    const likedVideos = likes.map(like => like.videoId.toString());
+    return likedVideos;
+  } catch (error) {
+    throw new Error(error.message);
+  }
+};
+
 // Get liked videos by user
 const getUserLikedVideos = async (req, res) => {
   try {
@@ -152,5 +163,6 @@ module.exports = {
   deleteUserLike,
   getUserLikedVideos,
   getUserLikedRestaurants,
-  getUserLikedFoodItems
+  getUserLikedFoodItems,
+  getUserLikedVideos2
 };

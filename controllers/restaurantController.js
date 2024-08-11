@@ -258,7 +258,7 @@ const generateCacheKey = (latitude, longitude,minRadius,maxRadius) => {
   return `restaurants:${latitude}:${longitude}:${minRadius}:${maxRadius}`;
 };
 
-async function findRestaurantsWithinRadius(latitude, longitude, minRadius, maxRadius) {
+const findRestaurantsWithinRadius=async (latitude, longitude, minRadius, maxRadius)=>{
   const parsedLatitude = parseCoordinate(latitude, 3);
   const parsedLongitude = parseCoordinate(longitude, 3);
   const minRadiusInMeters = minRadius * 1000;
