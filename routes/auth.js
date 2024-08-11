@@ -19,7 +19,7 @@ router.post('/register', async (req, res) => {
   let errors = [];
 
   // Validate input fields
-  if (!name || !email || !phoneNumber || !gender || !password) {
+  if (!email || !password) {
     errors.push({ msg: 'Please enter all fields' });
   }
 
