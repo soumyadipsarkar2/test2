@@ -7,7 +7,9 @@ const {
   updateUser,
   deleteUser,
   addUserLike,
-  removeUserLike
+  removeUserLike,
+  getUserRestaurantLikes,
+  getUserFoodItemLikes
 } = require('../controllers/userController');
 
 const router = express.Router();
@@ -19,5 +21,6 @@ router.delete('/users/userLikes', removeUserLike);
 router.get('/users/:id', getUserById);
 router.put('/users/:id', updateUser);
 router.delete('/users/:id', deleteUser);
-
+router.get('/users/:userId/restaurantLikes', getUserRestaurantLikes);
+router.get('/users/:userId/foodItemLikes', getUserFoodItemLikes);
 module.exports = router;

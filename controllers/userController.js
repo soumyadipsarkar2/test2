@@ -178,6 +178,54 @@ const removeUserLike = async (req, res) => {
   }
 };
 
+// Get User Likes
+const getUserRestaurantLikes = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: 'likes.restaurants',
+        select: '_id name mainImage rating' // Select necessary fields for restaurants
+      });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found', data: null });
+    }
+
+    res.status(200).json({ 
+      message: 'User likes retrieved successfully', 
+      data: user.likes.restaurants
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message, data: null });
+  }
+};
+
+// Get User Likes
+const getUserFoodItemLikes = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      .populate({
+        path: 'likes.foodItems',
+        select: 'name mainImage actualCost discountedCost' // Select necessary fields for food items
+      });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found', data: null });
+    }
+
+    res.status(200).json({ 
+      message: 'User likes retrieved successfully', 
+      data: user.likes.foodItems
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message, data: null });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -186,5 +234,7 @@ module.exports = {
   deleteUser,
   UserController,
   addUserLike,
-  removeUserLike
+  removeUserLike,
+  getUserRestaurantLikes,
+  getUserFoodItemLikes
 };

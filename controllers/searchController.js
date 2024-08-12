@@ -4,7 +4,7 @@ const FoodItem = require('../models/foodItem');
 const { findRestaurantsWithinRadius } = require('./restaurantController');
 
 const searchSuggestions = async (req, res) => {
-  const { query, latitude, longitude } = req.query;
+  const { query, latitude, longitude,minRadius=0,maxRadius=5 } = req.query;
   if (!query) {
     return res.status(400).json({ message: 'Query parameter is required', data: null });
   }
@@ -14,7 +14,7 @@ const searchSuggestions = async (req, res) => {
 
   try {
     // Step 1: Get nearby restaurants within 0 to 5 KM
-    const nearbyRestaurants = await findRestaurantsWithinRadius(latitude, longitude, 0, 5);
+    const nearbyRestaurants = await findRestaurantsWithinRadius(latitude, longitude,minRadius,maxRadius);
     const nearbyRestaurantIds = nearbyRestaurants.map(r => r.restaurantId);
 
     // Step 2: Search within the nearby restaurants for name and cuisines
