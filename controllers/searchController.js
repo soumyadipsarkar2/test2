@@ -82,4 +82,59 @@ const searchSuggestions = async (req, res) => {
   }
 };
 
-module.exports = { searchSuggestions };
+const searchFoodItems = async (req, res) => {
+  const { query, restaurantId } = req.query;
+
+  if (!query) {
+    return res.status(400).json({ message: 'Query parameter is required', data: null });
+  }
+
+  if (!restaurantId) {
+    return res.status(400).json({ message: 'Restaurant ID is required', data: null });
+  }
+
+  try {
+    // Step 1: Validate the restaurantId
+    const restaurantExists = await Restaurant.exists({ _id: restaurantId });
+    if (!restaurantExists) {
+      return res.status(404).json({ message: 'Restaurant not found', data: null });
+    }
+
+    // Step 2: Search for food items in the specified restaurant that match the query
+    const foodItems = await FoodItem.find(
+      {
+        restaurantId: new mongoose.Types.ObjectId(restaurantId),
+        name: { $regex: query, $options: 'i' }
+      },
+      {
+        name: 1,
+        mainImage: 1,
+        rating: 1,
+        numberOfRatings: 1,
+        discountedCost: 1,
+        actualCost: 1
+      }
+    ).sort({ rating: -1 }).limit(10);
+
+    // Step 3: Prepare the response data
+    const results = foodItems.map(item => ({
+      name: item.name,
+      mainImage: item.mainImage,
+      rating: item.rating,
+      numberOfRatings: item.numberOfRatings,
+      actualCost: item.actualCost,
+      discountedCost:item.discountedCost
+    }));
+
+    // Step 4: Return the search results
+    res.status(200).json({
+      message: 'Food items retrieved successfully',
+      data: results
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message, data: null });
+  }
+};
+
+module.exports = { searchSuggestions,searchFoodItems };

@@ -1131,7 +1131,25 @@ const getPopularRestaurants = async (req, res) => {
   }
 };
 
+// Get Categories with their counts for a specific Restaurant
+const getMenuCategoriesWithCounts = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const categories = await FoodItem.aggregate([
+      { $match: { restaurantId: new mongoose.Types.ObjectId(id) } },
+      { $group: { _id: "$category", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    res.status(200).json({ success: true, data: categories });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+  }
+};
+
 module.exports = {
+  getRestaurantDetails,
   findRestaurantsWithinRadius,
   createRestaurant,
   getFilteredRestaurants,
@@ -1150,5 +1168,5 @@ module.exports = {
   createRating,
   getRestaurantDetailsWithFoodItems,
   getPopularRestaurants,
-  getRestaurantDetails
+  getMenuCategoriesWithCounts
 };

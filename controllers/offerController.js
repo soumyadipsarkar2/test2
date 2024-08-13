@@ -1,7 +1,7 @@
 // controllers/offerController.js
 const Offer = require('../models/offer');
+const Restaurant = require('../models/restaurant');
 const { findRestaurantsWithinRadius } = require('./restaurantController');
-const { getRestaurantDetails } = require('./restaurantController');
 const { getFoodItemDetails } = require('./foodItemController');
 
 // Create a new offer
@@ -66,6 +66,19 @@ const normalizeRequestParams = (queryParams) => {
     }
   }
   return normalizedParams;
+};
+
+const getRestaurantDetails = async (restaurantIds) => {
+  const restaurantDetails = [];
+  if (restaurantIds.length > 0) {
+    const mongoResults = await Restaurant.find({ _id: { $in: restaurantIds } });
+
+    mongoResults.forEach(result => {
+      restaurantDetails.push(result);
+    });
+  }
+
+  return restaurantDetails;
 };
 
 // Function to get offers based on filters

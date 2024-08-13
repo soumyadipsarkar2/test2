@@ -16,7 +16,8 @@ const {
   getSimilarRestaurants,
   createRating,
   getRestaurantDetailsWithFoodItems,
-  getPopularRestaurants
+  getPopularRestaurants,
+  getMenuCategoriesWithCounts
 } = require('../controllers/restaurantController');
 
 const router = express.Router();
@@ -37,5 +38,6 @@ router.delete('/restaurants/:id', deleteRestaurant);
 router.put('/restaurants/:id/rate', giveRatingToRestaurant);
 router.post('/ratings', createRating);
 router.get('/restaurants/:id/details', getRestaurantDetailsWithFoodItems);
+router.get('/restaurants/:id/menu-categories', getMenuCategoriesWithCounts);
 
 module.exports = router;
