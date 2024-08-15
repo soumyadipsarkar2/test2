@@ -64,6 +64,43 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// Register route
+router.post('/googleRegister', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+
+    // Check if the email is already in use
+    let user = await User.findOne({ email });
+
+    if (user) {
+      // Generate a new token and store it in Redis
+      const token = generateToken(user.id);
+      const cacheKey = `token#${user.id}`;
+      // Delete any existing token
+      await CachedData.deleteOne({ key: cacheKey });
+
+      // Store the new token in Redis with expiration
+      await CachedData.create({ key: cacheKey, value: token });
+      return res.json({ token });
+    }
+
+    // If email does not exist, create a new user
+    user = new User({ email, name });
+    const savedUser = await user.save();
+    // Generate a new token and store it in Redis
+    const token = generateToken(savedUser.id);
+    const cacheKey = `token#${savedUser.id}`;
+    // Delete any existing token
+    await CachedData.deleteOne({ key: cacheKey });
+
+    // Store the new token in Redis with expiration
+    await CachedData.create({ key: cacheKey, value: token });
+    res.json({ token });
+  } catch (error) {
+    res.status(400).json({ message: 'Error creating user: ' + error.message, data: null });
+  }
+});
+
 // Login route
 router.post('/login', async (req, res, next) => {
   passport.authenticate('local', async (err, user, info) => {

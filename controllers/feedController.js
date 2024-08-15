@@ -123,8 +123,8 @@ const getFeed = async (req, res) => {
     const {
         latitude,
         longitude,
-        minRadius,
-        maxRadius,
+        minRadius=0,
+        maxRadius=5,
         sort = 'relevance',
         mode = 'delivery',
         foodType = 'Veg',
@@ -221,7 +221,7 @@ const getFeed = async (req, res) => {
                         value: offer.description
                     })),
                     ctaText: 'Book Now',
-                    diningVideosData: videos.map(video => ({
+                    videosData: videos.map(video => ({
                         videoId: video._id,
                         videoLink: video.link,
                         likes: video.likes,
@@ -259,7 +259,7 @@ const getFeed = async (req, res) => {
                             restaurantFoodType: restaurant.foodType,
                             spendCost: restaurant.avgCosts['2'],
                             ctaText: 'Order Now',
-                            deliveryVideosData: [],
+                            videosData: [],
                             relevanceScore: calculateRelevanceScore(restaurant, restaurantDistances[restaurant._id.toString()], 'restaurant')
                         };
                     }
@@ -282,7 +282,7 @@ const getFeed = async (req, res) => {
                         }))
                     }));
 
-                    restaurantMap[restaurantId].deliveryVideosData.push(...foodItemVideosData);
+                    restaurantMap[restaurantId].videosData.push(...foodItemVideosData);
                 }
             })
         );
@@ -322,7 +322,7 @@ const getFeed = async (req, res) => {
             finalResponses = [...diningResponses,...deliveryResponses];
         }
 
-        res.status(200).send(finalResponses);
+        res.status(200).json({ message: 'Feed fetched successfully', data: finalResponses });
     } catch (err) {
         res.status(500).send({ message: 'Error retrieving feed', error: err.message });
     }
