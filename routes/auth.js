@@ -76,26 +76,49 @@ router.post('/googleRegister', async (req, res) => {
       // Generate a new token and store it in Redis
       const token = generateToken(user.id);
       const cacheKey = `token#${user.id}`;
+      
       // Delete any existing token
       await CachedData.deleteOne({ key: cacheKey });
-
+      
       // Store the new token in Redis with expiration
       await CachedData.create({ key: cacheKey, value: token });
-      return res.json({ token });
+      
+      // Return user details and token
+      return res.status(200).json({
+        message: 'User already exists',
+        data: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          token
+        }
+      });
     }
 
     // If email does not exist, create a new user
     user = new User({ email, name });
     const savedUser = await user.save();
+    
     // Generate a new token and store it in Redis
     const token = generateToken(savedUser.id);
     const cacheKey = `token#${savedUser.id}`;
+    
     // Delete any existing token
     await CachedData.deleteOne({ key: cacheKey });
-
+    
     // Store the new token in Redis with expiration
     await CachedData.create({ key: cacheKey, value: token });
-    res.json({ token });
+    
+    // Return user details and token
+    res.status(201).json({
+      message: 'User created successfully',
+      data: {
+        id: savedUser.id,
+        email: savedUser.email,
+        name: savedUser.name,
+        token
+      }
+    });
   } catch (error) {
     res.status(400).json({ message: 'Error creating user: ' + error.message, data: null });
   }
