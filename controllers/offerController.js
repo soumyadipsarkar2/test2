@@ -245,6 +245,9 @@ async function getActiveOffers() {
 
 const calculateOfferAmount = async (offerIds) => {
   try {
+    if (offerIds.length === 0) {
+      return 0;
+    }
     const offers = await Offer.find({ _id: { $in: offerIds }, status: 'active' });
     const totalOfferAmount = offers.reduce((sum, offer) => sum + offer.amount, 0);
     return 100;

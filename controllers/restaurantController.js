@@ -258,60 +258,31 @@ const generateCacheKey = (latitude, longitude,minRadius,maxRadius) => {
   return `restaurants:${latitude}:${longitude}:${minRadius}:${maxRadius}`;
 };
 
-const findRestaurantsWithinRadius=async (latitude, longitude, minRadius, maxRadius)=>{
+const findRestaurantsWithinRadius = async (latitude, longitude, minRadius, maxRadius) => {
   const parsedLatitude = parseCoordinate(latitude, 3);
   const parsedLongitude = parseCoordinate(longitude, 3);
-  const minRadiusInMeters = minRadius * 1000;
-  const maxRadiusInMeters = maxRadius * 1000;
 
   const cacheKey = generateCacheKey(parsedLatitude, parsedLongitude, minRadius, maxRadius);
   console.log("cacheKey", cacheKey);
 
   let cachedData = await CachedData.findOne({ key: cacheKey });
-  if(cachedData){cachedData=cachedData.value;}
   if (cachedData) {
+    cachedData = cachedData.value;
     console.log("cacheKey1324243242423", cacheKey);
     return JSON.parse(cachedData);
   }
 
-  // Step 1: Fetch restaurants within the max radius using MongoDB's geospatial query
-  const maxRadiusRestaurants = await Restaurant.find({
-    'location.coordinates': {
-      $geoWithin: {
-        $centerSphere: [[parsedLongitude, parsedLatitude], maxRadiusInMeters / 6378100] // Radius in radians
-      }
-    }
-  }, { _id: 1, location: 1 });
-
-  let allNearbyRestaurants = maxRadiusRestaurants;
-
-  if (minRadius > 0) {
-    // Step 2: Fetch restaurants within the min radius using MongoDB's geospatial query
-    const minRadiusRestaurants = await Restaurant.find({
-      'location.coordinates': {
-        $geoWithin: {
-          $centerSphere: [[parsedLongitude, parsedLatitude], minRadiusInMeters / 6378100] // Radius in radians
-        }
-      }
-    }, { _id: 1, location: 1 });
-
-    // Convert the minRadiusRestaurants to a Set of IDs for quick lookup
-    const minRadiusRestaurantIds = new Set(minRadiusRestaurants.map(restaurant => restaurant._id.toString()));
-
-    // Filter out restaurants within the minRadius from the maxRadiusRestaurants
-    allNearbyRestaurants = maxRadiusRestaurants.filter(restaurant => 
-      !minRadiusRestaurantIds.has(restaurant._id.toString())
-    );
-  }
-
   try {
+    // Step 1: Fetch all restaurants (in a broad radius, e.g., maxRadius + buffer)
+    const allRestaurants = await Restaurant.find({}, { _id: 1, location: 1 });
+
     // Prepare coordinates for Mapbox Matrix API
-    const coordinates = allNearbyRestaurants.map(restaurant => ({
+    const coordinates = allRestaurants.map(restaurant => ({
       coordinates: restaurant.location.coordinates
     }));
     coordinates.unshift({ coordinates: [parsedLongitude, parsedLatitude] }); // Add the user location as the first coordinate
 
-    // Step 3: Use Mapbox Matrix API to calculate distances and durations
+    // Step 2: Use Mapbox Matrix API to calculate distances and durations
     const matrixResponse = await mbxMatrix.getMatrix({
       points: coordinates,
       profile: 'driving',
@@ -321,8 +292,8 @@ const findRestaurantsWithinRadius=async (latitude, longitude, minRadius, maxRadi
     const distances = matrixResponse.body.distances[0]; // Distances from the user to each restaurant
     const durations = matrixResponse.body.durations[0]; // Durations from the user to each restaurant
 
-    // Step 4: Filter and map distances to restaurants, keeping those within the specified range
-    const restaurantsWithDistancesAndTimes = allNearbyRestaurants
+    // Step 3: Filter and map distances to restaurants, keeping those within the specified range
+    const restaurantsWithDistancesAndTimes = allRestaurants
       .map((restaurant, index) => ({
         restaurantId: restaurant._id,
         distanceInKm: distances[index + 1] / 1000, // Convert meters to kilometers
@@ -334,14 +305,14 @@ const findRestaurantsWithinRadius=async (latitude, longitude, minRadius, maxRadi
       })
       .sort((a, b) => a.distanceInKm - b.distanceInKm); // Sort by distance ascending
 
-    // Step 5: Cache the results
+    // Step 4: Cache the results
     await CachedData.create({ key: cacheKey, value: JSON.stringify(restaurantsWithDistancesAndTimes) });
     return restaurantsWithDistancesAndTimes;
   } catch (error) {
     console.error('Error fetching nearby restaurants:', error);
     throw error;
   }
-}
+};
 
 const getPopularCuisinesNearby2 = async (latitude, longitude,radius) => {
   // Round latitude and longitude to 2 decimal places for caching
@@ -1031,14 +1002,14 @@ const getPopularRestaurants = async (req, res) => {
 
   try {
     // Check if cached data exists
-    let cachedData = await CachedData.findOne({ key: cacheKey });
-    if(cachedData){cachedData=cachedData.value;}
-    if (cachedData) {
-      return res.status(200).json({
-        message: 'Popular restaurants fetched successfully from cache',
-        data: JSON.parse(cachedData)
-      });
-    }
+    // let cachedData = await CachedData.findOne({ key: cacheKey });
+    // if (cachedData) cachedData = cachedData.value;
+    // if (cachedData) {
+    //   return res.status(200).json({
+    //     message: 'Popular restaurants fetched successfully from cache',
+    //     data: JSON.parse(cachedData)
+    //   });
+    // }
 
     // Step 1: Find nearby restaurants
     const nearbyRestaurants = await findRestaurantsWithinRadius(
@@ -1050,13 +1021,18 @@ const getPopularRestaurants = async (req, res) => {
 
     const restaurantIds = nearbyRestaurants.map(restaurant => restaurant.restaurantId);
 
+    // Convert restaurant IDs to ObjectId
+    const objectIdRestaurantIds = restaurantIds.map(id => new mongoose.Types.ObjectId(id));
+
+    // Aggregate order data
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const objectIdRestaurantIds = restaurantIds.map(id => new mongoose.Types.ObjectId(id));
+
     const pipeline = [
       {
         $match: {
-          restaurantId: { $in: objectIdRestaurantIds }
+          restaurantId: { $in: objectIdRestaurantIds },
+          // placedOn: { $gte: oneWeekAgo }
         }
       },
       {
@@ -1072,17 +1048,11 @@ const getPopularRestaurants = async (req, res) => {
           totalOrders: 1,
           totalAmount: 1
         }
-      },
-      {
-        $sort: {
-          totalOrders: -1,
-          totalAmount: -1
-        }
       }
     ];
 
-    const results = await Order.aggregate(pipeline);
-    const popularRestaurantsData = results.map(result => ({
+    const orderResults = await Order.aggregate(pipeline);
+    const popularRestaurantsData = orderResults.map(result => ({
       restaurantId: result.restaurantId.toString(),
       totalOrders: result.totalOrders,
       totalAmount: result.totalAmount
@@ -1091,10 +1061,10 @@ const getPopularRestaurants = async (req, res) => {
     // Extract popular restaurant IDs
     const popularRestaurantIds = popularRestaurantsData.map(data => data.restaurantId);
 
-    // Step 3: Fetch restaurant details for popular restaurants
-    const restaurantDetails = await getRestaurantDetails(popularRestaurantIds);
+    // Step 3: Fetch restaurant details for all nearby restaurants
+    const restaurantDetails = await getRestaurantDetails(restaurantIds);
 
-    // Step 4: Format and return the data
+    // Step 4: Merge and sort data
     let detailedRestaurants = restaurantDetails.map(detail => {
       const nearbyRestaurant = nearbyRestaurants.find(nearby => nearby.restaurantId.toString() === detail._id.toString());
       const popularData = popularRestaurantsData.find(data => data.restaurantId.toString() === detail._id.toString());
@@ -1114,12 +1084,22 @@ const getPopularRestaurants = async (req, res) => {
         foodType: detail.foodType,
         reviews: detail.reviews,
         modeSupported: detail.modeSupported,
-        totalOrders: popularData ? popularData.totalOrders : 0
+        totalOrders: popularData ? popularData.totalOrders : 0,
+        totalAmount: popularData ? popularData.totalAmount : 0
       };
     });
 
-    // Step 5: Cache the results
-    await CachedData.create({ key: cacheKey, value: JSON.stringify(detailedRestaurants) });
+    // Step 5: Sort by totalOrders and totalAmount
+    detailedRestaurants.sort((a, b) => {
+      // Sort by totalOrders first, and by totalAmount if orders are equal
+      if (b.totalOrders === a.totalOrders) {
+        return b.totalAmount - a.totalAmount;
+      }
+      return b.totalOrders - a.totalOrders;
+    });
+
+    // Step 6: Cache the results
+    // await CachedData.create({ key: cacheKey, value: JSON.stringify(detailedRestaurants) });
 
     res.status(200).json({
       message: 'Popular restaurants fetched successfully',

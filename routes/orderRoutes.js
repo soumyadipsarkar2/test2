@@ -12,7 +12,8 @@ const {
   calculateCharges,
   cancelOrder,
   addToCart,
-  getCartItems
+  getCartItems,
+  removeFromCart
 } = require('../controllers/orderController');
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.get('/orders/currentOrders', getOrdersByUserId);
 router.get('/orders/getCartItems', getCartItems);
 router.post('/orders/addToCart', addToCart);
 router.get('/orders/calculateCharges', calculateCharges);
+router.post('/orders/removeFromCart', removeFromCart);
 router.put('/orders/cancelOrder/:orderId', cancelOrder);
 router.get('/orders/:id', getOrderById);
 router.put('/orders/:id', updateOrder);

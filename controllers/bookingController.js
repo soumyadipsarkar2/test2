@@ -114,12 +114,46 @@ const updateBooking = async (req, res) => {
   }
 };
 
-// Delete a booking by ID
 const deleteBooking = async (req, res) => {
   try {
-    const deletedBooking = await Booking.findByIdAndDelete(req.params.id);
-    if (!deletedBooking) return res.status(404).json({ message: 'Booking not found', data: null });
-    res.status(200).json({ message: 'Booking deleted successfully', data: deletedBooking });
+    const bookingId = req.params.id;
+    
+    // Find the booking by ID
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ message: 'Booking not found', data: null });
+
+    // Update the booking status to 'Cancelled'
+    booking.status = 'Cancelled';
+    const updatedBooking = await booking.save();
+
+    res.status(200).json({ message: 'Booking cancelled successfully', data: updatedBooking });
+  } catch (error) {
+    res.status(500).json({ message: error.message, data: null });
+  }
+};
+
+const getTodayBookings = async (req, res) => {
+  const { userId } = req.query;
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required', data: null });
+    }
+
+    const startOfDay = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    const endOfDay = Math.floor(new Date().setHours(23, 59, 59, 999) / 1000);
+
+    const bookings = await Booking.find({
+      userId,
+      time: { $gte: startOfDay, $lt: endOfDay },
+      status: 'Booked'
+    });
+
+    if (bookings.length === 0) {
+      return res.status(404).json({ message: 'No bookings found for today', data: null });
+    }
+
+    res.status(200).json({ message: 'Bookings for today retrieved successfully', data: bookings });
   } catch (error) {
     res.status(500).json({ message: error.message, data: null });
   }
@@ -137,5 +171,6 @@ module.exports = {
   deleteBooking,
   getPastBookingsByUserId,
   getCurrentBookingsByUserId,
-  getDiningBookings
+  getDiningBookings,
+  getTodayBookings
 };

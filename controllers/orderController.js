@@ -282,6 +282,7 @@ const calculateCharges2 = async ({ items, restaurantId, deliveryPartnerTipped, o
 
   // Cache the charges result
   const chargesCacheKey = `charges#${userId}#${restaurantId}`;
+  await CachedData.deleteOne({ key: chargesCacheKey });
   await CachedData.create({ key: chargesCacheKey, value: JSON.stringify(charges) }); // Cache for 24 hours
 
   return charges;
@@ -343,9 +344,9 @@ const calculateAddOnsPrice = (addOns, foodItem) => {
 };
 
 const addToCart = async (req, res) => {
-  const { userId, items, restaurantId } = req.body;
+  const { userId, item, restaurantId } = req.body;
 
-  if (!userId || !restaurantId || !items || !Array.isArray(items)) {
+  if (!userId || !restaurantId || !item || typeof item !== 'object') {
     return res.status(400).json({ message: 'Invalid request body' });
   }
 
@@ -354,34 +355,130 @@ const addToCart = async (req, res) => {
     
     // Fetch existing cart data from Redis
     let cachedCart = await CachedData.findOne({ key: cartKey });
-    if(cachedCart){cachedCart=cachedCart.value;}
+    if (cachedCart) cachedCart = cachedCart.value;
     let cartData = cachedCart ? JSON.parse(cachedCart) : {};
 
-    // Initialize cart data for the restaurant
-    cartData[restaurantId] = [];
+    // Initialize cart data for the restaurant if not already present
+    if (!cartData[restaurantId]) {
+      cartData[restaurantId] = [];
+    }
 
-    // Process new items
-    for (const item of items) {
-      const foodItem = await FoodItem.findById(item.foodItemId);
-      if (!foodItem) {
-        return res.status(404).json({ message: `Food item with ID ${item.foodItemId} not found` });
-      }
+    // Find the food item by its ID
+    const foodItem = await FoodItem.findById(item.foodItemId);
+    if (!foodItem) {
+      return res.status(404).json({ message: `Food item with ID ${item.foodItemId} not found` });
+    }
 
-      // Calculate the price of all add-ons
-      const addOnsPrice = (item.addOns || []).reduce((total, addOn) => total + (addOn.price || 0), 0);
-      const itemPrice = (foodItem.discountedCost || foodItem.actualCost || 0) + addOnsPrice;
+    // Calculate the price of all add-ons
+    const addOnsPrice = (item.addOns || []).reduce((total, addOn) => total + (addOn.price || 0), 0);
+    const itemPrice = (foodItem.discountedCost || foodItem.actualCost || 0) + addOnsPrice;
 
-      // Add or replace the item
+    // Helper function to compare add-ons by category
+    const addOnsMatch = (existingAddOns, newAddOns) => {
+      if (existingAddOns.length !== newAddOns.length) return false;
+      const existingGrouped = groupAddOnsByCategory(existingAddOns);
+      const newGrouped = groupAddOnsByCategory(newAddOns);
+      return JSON.stringify(existingGrouped) === JSON.stringify(newGrouped);
+    };
+
+    const groupAddOnsByCategory = (addOns) => {
+      return addOns.reduce((acc, addOn) => {
+        if (!acc[addOn.groupName]) acc[addOn.groupName] = [];
+        acc[addOn.groupName].push(addOn.name);
+        return acc;
+      }, {});
+    };
+
+    // Check if the item with the same add-ons (grouped by category) already exists in the cart
+    let existingItemIndex = cartData[restaurantId].findIndex(cartItem => 
+      cartItem.foodItemId.toString() === item.foodItemId.toString() &&
+      addOnsMatch(cartItem.addOns, item.addOns || [])
+    );
+
+    if (existingItemIndex > -1) {
+      // If item exists, increase its quantity
+      cartData[restaurantId][existingItemIndex].quantity += 1;
+      cartData[restaurantId][existingItemIndex].price += itemPrice;
+    } else {
+      // Add the new item to the cart
       cartData[restaurantId].push({
         foodItemId: item.foodItemId,
         addOns: item.addOns || [],
-        quantity: item.quantity || 1,
-        price: itemPrice * (item.quantity || 1)
+        quantity: 1, // Add the item with quantity 1
+        price: itemPrice
       });
     }
 
-    // If the request has no items, delete the restaurant data
-    if (items.length === 0) {
+    // Update the cart in Redis without overriding the existing cart data
+    await CachedData.updateOne(
+      { key: cartKey },
+      { value: JSON.stringify(cartData) },
+      { upsert: true }
+    );
+
+    res.status(200).json({ message: 'Cart updated successfully', data: cartData });
+  } catch (error) {
+    console.error('Error adding to cart:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
+const removeFromCart = async (req, res) => {
+  const { userId, item, restaurantId } = req.body;
+
+  if (!userId || !restaurantId || !item || typeof item !== 'object') {
+    return res.status(400).json({ message: 'Invalid request body' });
+  }
+
+  try {
+    const cartKey = `cart#${userId}`;
+
+    // Fetch existing cart data from Redis
+    let cachedCart = await CachedData.findOne({ key: cartKey });
+    if (cachedCart) cachedCart = cachedCart.value;
+    let cartData = cachedCart ? JSON.parse(cachedCart) : {};
+
+    if (!cartData[restaurantId]) {
+      return res.status(404).json({ message: `No items found in the cart for restaurant ID ${restaurantId}` });
+    }
+
+    // Helper function to compare add-ons by category
+    const addOnsMatch = (existingAddOns, newAddOns) => {
+      if (existingAddOns.length !== newAddOns.length) return false;
+      const existingGrouped = groupAddOnsByCategory(existingAddOns);
+      const newGrouped = groupAddOnsByCategory(newAddOns);
+      return JSON.stringify(existingGrouped) === JSON.stringify(newGrouped);
+    };
+
+    const groupAddOnsByCategory = (addOns) => {
+      return addOns.reduce((acc, addOn) => {
+        if (!acc[addOn.groupName]) acc[addOn.groupName] = [];
+        acc[addOn.groupName].push(addOn.name);
+        return acc;
+      }, {});
+    };
+
+    // Find the item in the cart
+    let existingItemIndex = cartData[restaurantId].findIndex(cartItem => 
+      cartItem.foodItemId.toString() === item.foodItemId.toString() &&
+      addOnsMatch(cartItem.addOns, item.addOns || [])
+    );
+
+    if (existingItemIndex > -1) {
+      // Remove one quantity of the item
+      if (cartData[restaurantId][existingItemIndex].quantity > 1) {
+        cartData[restaurantId][existingItemIndex].quantity -= 1;
+        cartData[restaurantId][existingItemIndex].price -= cartData[restaurantId][existingItemIndex].price / cartData[restaurantId][existingItemIndex].quantity;
+      } else {
+        // Remove the item if quantity is 1
+        cartData[restaurantId].splice(existingItemIndex, 1);
+      }
+    } else {
+      return res.status(404).json({ message: 'Item not found in the cart' });
+    }
+
+    // If no items left for the restaurant, delete the restaurant data
+    if (cartData[restaurantId].length === 0) {
       delete cartData[restaurantId];
     }
 
@@ -389,13 +486,17 @@ const addToCart = async (req, res) => {
     if (Object.keys(cartData).length === 0) {
       await CachedData.deleteOne({ key: cartKey });
     } else {
-      await CachedData.deleteOne({ key: cartKey });
-      await CachedData.create({ key: cartKey, value: JSON.stringify(cartData) });
+      // Update the cart in Redis
+      await CachedData.updateOne(
+        { key: cartKey },
+        { value: JSON.stringify(cartData) },
+        { upsert: true }
+      );
     }
 
-    res.status(200).json({ message: 'Cart updated successfully', data: cartData });
+    res.status(200).json({ message: 'Item removed successfully', data: cartData });
   } catch (error) {
-    console.error('Error adding to cart:', error);
+    console.error('Error removing from cart:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
@@ -467,5 +568,6 @@ module.exports = {
   cancelOrder,
   addToCart,
   getCartItems,
-  createOrder2
+  createOrder2,
+  removeFromCart
 };
