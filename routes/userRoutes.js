@@ -9,13 +9,15 @@ const {
   addUserLike,
   removeUserLike,
   getUserRestaurantLikes,
-  getUserFoodItemLikes
+  getUserFoodItemLikes,
+  getUserByTokenId
 } = require('../controllers/userController');
 
 const router = express.Router();
 
 router.post('/users', createUser);
 router.get('/users', getAllUsers);
+router.get('/users/userByTokenId', getUserByTokenId);
 router.post('/users/userLikes', addUserLike);
 router.delete('/users/userLikes', removeUserLike);
 router.get('/users/:id', getUserById);

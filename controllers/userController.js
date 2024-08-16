@@ -1,5 +1,6 @@
 // controllers/userController.js
 const User = require('../models/user');
+const jwt = require('jsonwebtoken');
 
 class UserController {
   static async getUserById(userId, fields) {
@@ -226,6 +227,29 @@ const getUserFoodItemLikes = async (req, res) => {
   }
 };
 
+// Helper function to verify JWT token and extract user ID
+const verifyToken = (token) => {
+  return jwt.verify(token, process.env.JWT_SECRET);
+};
+
+// Read (Get) user details by token ID
+const getUserByTokenId = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(' ')[1]; // Assuming 'Bearer <token>'
+    if (!token) return res.status(401).json({ message: 'Token is missing', data: null });
+
+    const decoded = verifyToken(token);
+    const userId = decoded.id;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found', data: null });
+
+    res.status(200).json({ message: 'User retrieved successfully', data: user });
+  } catch (error) {
+    res.status(500).json({ message: error.message, data: null });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -236,5 +260,6 @@ module.exports = {
   addUserLike,
   removeUserLike,
   getUserRestaurantLikes,
-  getUserFoodItemLikes
+  getUserFoodItemLikes,
+  getUserByTokenId
 };
