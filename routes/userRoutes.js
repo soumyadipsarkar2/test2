@@ -15,9 +15,9 @@ const {
 
 const router = express.Router();
 
+router.get('/users/userByTokenId', getUserByTokenId);
 router.post('/users', createUser);
 router.get('/users', getAllUsers);
-router.get('/users/userByTokenId', getUserByTokenId);
 router.post('/users/userLikes', addUserLike);
 router.delete('/users/userLikes', removeUserLike);
 router.get('/users/:id', getUserById);
